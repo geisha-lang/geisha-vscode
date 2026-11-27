@@ -9,6 +9,10 @@ Official Visual Studio Code extension for the [Geisha](https://github.com/geisha
 - **Live Diagnostics**: Real-time lex/parse/type/exhaustiveness/`Send` diagnostics from `geisha lsp`.
 - **Hover**: Inferred expression/symbol types combined with `///` doc comments.
 - **Go to Definition**: Jump to local bindings, top-level definitions, ADT constructors, and cross-file definitions.
+- **Find All References**: Scope-aware cross-file references for local variables, functions, types, enum variants, and struct fields.
+- **Rename Symbol**: Scope-aware single-file and cross-file rename with `prepareRename` validation.
+- **Inlay Hints**: Inferred `let` variable type hints and function call parameter name hints.
+- **Code Actions (Quick Fixes)**: Prefix unused local variables with `_`, insert missing `match` arm skeletons, and auto-import undefined symbols.
 - **Document Symbols**: Hierarchical outline of `def`, `extern def`, `data` (+ variants), `type`, `concept` (+ methods), `instance`, and `mod`.
 - **Completion**: Current-module symbols, imported symbols, `std.*` / `sys.*` modules & exports, built-in primitives, and keywords.
 

@@ -26,7 +26,8 @@
   ],
   "main": "./extension.js",
   "scripts": {
-    "check": "node --check extension.js && node -e \"JSON.parse(require('fs').readFileSync('package.json','utf8')); JSON.parse(require('fs').readFileSync('language-configuration.json','utf8')); JSON.parse(require('fs').readFileSync('syntaxes/geisha.tmLanguage.json','utf8')); console.log('VS Code extension manifests & grammar valid.');\"",
+    "check": "node --check extension.js && node -e \"JSON.parse(require('fs').readFileSync('package.json','utf8')); JSON.parse(require('fs').readFileSync('language-configuration.json','utf8')); JSON.parse(require('fs').readFileSync('syntaxes/geisha.tmLanguage.json','utf8')); console.log('VS Code extension manifests & grammar valid.');\" && node test/lsp_client.test.js",
+    "test": "node test/lsp_client.test.js",
     "package": "npx --yes @vscode/vsce package --allow-missing-repository"
   },
   "contributes": {
