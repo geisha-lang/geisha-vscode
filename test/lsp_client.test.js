@@ -157,14 +157,38 @@ async function main() {
 
   // 3. Version-change guard: if docB changes while `textDocument/rename` is in flight, stale edits are discarded (returns null)
   const slowRenamePromise = registered.renameProvider.provideRenameEdits(docA, new Position(0, 8), 'slow_bar');
-  // Mutate docB.version while the stub server delays response for 'slow_bar'
   await new Promise((r) => setTimeout(r, 15));
   docB.version = 4;
   const staleRes = await slowRenamePromise;
   assert.strictEqual(staleRes, null, 'expected null WorkspaceEdit when affected open document changed mid-request');
 
+  // 4. Close-document guard: if docB is closed while `textDocument/rename` is in flight, stale edits are discarded (returns null)
+  const closeRenamePromise = registered.renameProvider.provideRenameEdits(docA, new Position(0, 8), 'slow_bar');
+  await new Promise((r) => setTimeout(r, 15));
+  docB.isClosed = true;
+  vscodeStub.workspace.textDocuments = [docA];
+  const closedRes = await closeRenamePromise;
+  assert.strictEqual(closedRes, null, 'expected null WorkspaceEdit when affected open document closed mid-request');
+
+  // 5. Close + reopen guard: if docB is closed and reopened as a new document instance with the same version, stale edits are discarded
+  const docB2 = {
+    uri: { toString: () => 'file:///proj/b.gsa' },
+    languageId: 'geisha',
+    version: 1,
+    isClosed: false,
+    _text: 'use a.foo\ndef main(): Int = foo()\n',
+    getText() { return this._text; },
+  };
+  vscodeStub.workspace.textDocuments = [docA, docB2];
+  const reopenRenamePromise = registered.renameProvider.provideRenameEdits(docA, new Position(0, 8), 'slow_bar');
+  await new Promise((r) => setTimeout(r, 15));
+  const docB3 = { ...docB2 };
+  vscodeStub.workspace.textDocuments = [docA, docB3];
+  const reopenedRes = await reopenRenamePromise;
+  assert.strictEqual(reopenedRes, null, 'expected null WorkspaceEdit when affected document was reopened mid-request');
+
   await ext.deactivate();
-  console.log('PASS [geisha-vscode]: cross-file multi-doc debounce flush & version guard verified.');
+  console.log('PASS [geisha-vscode]: cross-file multi-doc debounce flush, version guard & close/reopen guard verified.');
 }
 
 main().catch((err) => {

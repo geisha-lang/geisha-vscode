@@ -533,10 +533,10 @@ async function activate(context) {
       async provideRenameEdits(doc, pos, newName) {
         if (!activeClient || !activeClient.initialized) return null;
         activeClient.flushAllDidChanges();
-        const versionsBefore = new Map();
+        const openBefore = new Map();
         for (const openDoc of vscode.workspace.textDocuments) {
           if (openDoc.languageId === 'geisha') {
-            versionsBefore.set(openDoc.uri.toString(), openDoc.version);
+            openBefore.set(openDoc.uri.toString(), { doc: openDoc, version: openDoc.version });
           }
         }
         const reqUri = doc.uri.toString();
@@ -547,21 +547,27 @@ async function activate(context) {
           newName,
         });
         if (!res) return null;
-        if (doc.version !== reqVer) {
-          output.appendLine(`[warn] Discarding stale rename edits: ${reqUri} changed during request`);
+        if (doc.isClosed || doc.version !== reqVer) {
+          output.appendLine(`[warn] Discarding stale rename edits: ${reqUri} closed or changed during request`);
           return null;
         }
         if (res.changes && typeof res.changes === 'object') {
-          const openByUri = new Map();
+          const openAfter = new Map();
           for (const openDoc of vscode.workspace.textDocuments) {
             if (openDoc.languageId === 'geisha') {
-              openByUri.set(openDoc.uri.toString(), openDoc);
+              openAfter.set(openDoc.uri.toString(), openDoc);
             }
           }
           for (const changedUri of Object.keys(res.changes)) {
-            const curDoc = openByUri.get(changedUri);
-            if (curDoc && versionsBefore.has(changedUri) && curDoc.version !== versionsBefore.get(changedUri)) {
-              output.appendLine(`[warn] Discarding stale rename edits: ${changedUri} changed during request`);
+            const prev = openBefore.get(changedUri);
+            const cur = openAfter.get(changedUri);
+            if (prev) {
+              if (!cur || cur.isClosed || cur !== prev.doc || cur.version !== prev.version) {
+                output.appendLine(`[warn] Discarding stale rename edits: ${changedUri} closed, reopened, or changed during request`);
+                return null;
+              }
+            } else if (cur) {
+              output.appendLine(`[warn] Discarding stale rename edits: ${changedUri} opened during request`);
               return null;
             }
           }
