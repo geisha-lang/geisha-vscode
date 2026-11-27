@@ -1,0 +1,90 @@
+{
+  "name": "geisha-lang",
+  "displayName": "Geisha Language Support",
+  "description": "Syntax highlighting and Language Server Protocol (LSP) support for the Geisha programming language (.gsa)",
+  "version": "0.1.0",
+  "publisher": "geisha-lang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geisha-lang/geisha-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "geisha",
+    "gsa",
+    "lsp",
+    "language-server"
+  ],
+  "activationEvents": [
+    "onLanguage:geisha"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "check": "node --check extension.js && node -e \"JSON.parse(require('fs').readFileSync('package.json','utf8')); JSON.parse(require('fs').readFileSync('language-configuration.json','utf8')); JSON.parse(require('fs').readFileSync('syntaxes/geisha.tmLanguage.json','utf8')); console.log('VS Code extension manifests & grammar valid.');\"",
+    "package": "npx --yes @vscode/vsce package --allow-missing-repository"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "geisha",
+        "aliases": [
+          "Geisha",
+          "geisha"
+        ],
+        "extensions": [
+          ".gsa"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "geisha",
+        "scopeName": "source.geisha",
+        "path": "./syntaxes/geisha.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "geisha.lsp.restart",
+        "title": "Geisha: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Geisha",
+      "properties": {
+        "geisha.lsp.path": {
+          "type": "string",
+          "default": "geisha",
+          "description": "Path to the `geisha` CLI executable used to launch `geisha lsp`."
+        },
+        "geisha.lsp.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Command-line arguments passed to the `geisha` executable to start the LSP server."
+        },
+        "geisha.lsp.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace JSON-RPC messages between VS Code and `geisha lsp` in the Geisha output channel."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Geisha",
+  "scopeName": "source.geisha",
+  "patterns": [
+    { "include": "#shebang" },
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#numbers" },
+    { "include": "#definitions" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#builtins" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "shebang": {
+      "name": "comment.line.number-sign.shebang.geisha",
+      "match": "\\A#!.*$"
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.geisha",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.geisha",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.geisha",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.geisha",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.geisha",
+          "match": "\\\\[nrt0\\\\\"']"
+        }
+      ]
+    },
+    "chars": {
+      "name": "string.quoted.single.geisha",
+      "match": "'(?:\\\\[nrt0\\\\\"']|[^'\\\\])'"
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.geisha",
+          "match": "\\b0[xX][0-9a-fA-F_]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.geisha",
+          "match": "\\b0[oO][0-7_]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.geisha",
+          "match": "\\b0[bB][01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.geisha",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9][0-9_]*)?\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.geisha",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "definitions": {
+      "patterns": [
+        {
+          "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.function.geisha" },
+            "2": { "name": "entity.name.function.geisha" }
+          }
+        },
+        {
+          "match": "\\b(data|type|concept)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.type.geisha" },
+            "2": { "name": "entity.name.type.geisha" }
+          }
+        },
+        {
+          "match": "\\b(mod)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.module.geisha" },
+            "2": { "name": "entity.name.namespace.geisha" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.geisha",
+          "match": "\\b(?:if|else|while|match|in)\\b"
+        },
+        {
+          "name": "keyword.declaration.geisha",
+          "match": "\\b(?:def|let|data|type|concept|instance|mod|use|open|as|forall)\\b"
+        },
+        {
+          "name": "storage.modifier.geisha",
+          "match": "\\b(?:pub|extern|noalloc|init)\\b"
+        },
+        {
+          "name": "constant.language.boolean.geisha",
+          "match": "\\b(?:true|false)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.geisha",
+          "match": "\\b(?:Void|Int|Int64|Float|Float32|Bool|Char|String|Ptr|ForeignPtr|ScopedPtr|Cell|Array|ImmArray|List|Option|Result|Vec|StrMap|StringBuf)\\b"
+        },
+        {
+          "name": "entity.name.type.geisha",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "name": "support.function.builtin.geisha",
+      "match": "\\b(?:printLn|strLen|strByteAt|strSlice|strConcat|strFromBytes|ptrSliceFromStr|ptrSliceToString|ptrIsNull|ptrNull|ptrToString|ptrAllocBytes|ptrByteAt|cellNew|cellGet|cellSet|arrayNew|arrayGet|arraySet|arrayLen|intToI64|i64ToInt|intToFloat|floatToInt|charToInt|parTabulate|cFnPtr)\\b"
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.geisha",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.logical.geisha",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.comparison.geisha",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.bitwise.geisha",
+          "match": ">>>|<<|>>|&|\\||\\^|~"
+        },
+        {
+          "name": "keyword.operator.arithmetic.geisha",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.try.geisha",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.assignment.geisha",
+          "match": "="
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.geisha",
+          "match": "[,;:.]"
+        }
+      ]
+    }
+  }
+}
