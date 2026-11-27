@@ -70,6 +70,14 @@ class GeishaLspClient {
         textDocument: {
           hover: { contentFormat: ['markdown', 'plaintext'] },
           definition: {},
+          references: {},
+          rename: { prepareSupport: true },
+          inlayHint: {},
+          codeAction: {
+            codeActionLiteralSupport: {
+              codeActionKind: { valueSet: ['quickfix', 'refactor', 'source'] },
+            },
+          },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           completion: {
             completionItem: { documentationFormat: ['markdown', 'plaintext'] },
@@ -327,6 +335,48 @@ function toVsCompletionKind(k) {
   return vscode.CompletionItemKind.Text;
 }
 
+function toVsWorkspaceEdit(edit) {
+  const wsEdit = new vscode.WorkspaceEdit();
+  if (!edit || !edit.changes || typeof edit.changes !== 'object') {
+    return wsEdit;
+  }
+  for (const [uriStr, textEdits] of Object.entries(edit.changes)) {
+    if (!Array.isArray(textEdits)) continue;
+    const uri = vscode.Uri.parse(uriStr);
+    for (const te of textEdits) {
+      if (!te || !te.range) continue;
+      wsEdit.replace(uri, toVsRange(te.range), typeof te.newText === 'string' ? te.newText : '');
+    }
+  }
+  return wsEdit;
+}
+
+function toLspSeverity(sev) {
+  switch (sev) {
+    case vscode.DiagnosticSeverity.Error: return 1;
+    case vscode.DiagnosticSeverity.Warning: return 2;
+    case vscode.DiagnosticSeverity.Information: return 3;
+    case vscode.DiagnosticSeverity.Hint: return 4;
+    default: return 1;
+  }
+}
+
+function fromVsDiagnostic(d) {
+  const out = {
+    range: {
+      start: { line: d.range.start.line, character: d.range.start.character },
+      end: { line: d.range.end.line, character: d.range.end.character },
+    },
+    severity: toLspSeverity(d.severity),
+    message: d.message || '',
+  };
+  if (d.source) out.source = d.source;
+  if (d.code !== undefined) {
+    out.code = typeof d.code === 'object' && d.code !== null ? d.code.value : d.code;
+  }
+  return out;
+}
+
 /** @type {GeishaLspClient | null} */
 let activeClient = null;
 
@@ -435,6 +485,128 @@ async function activate(context) {
         }
       },
     }),
+    vscode.languages.registerReferenceProvider('geisha', {
+      async provideReferences(doc, pos, context) {
+        if (!activeClient || !activeClient.initialized) return [];
+        try {
+          activeClient.flushDidChange(doc.uri.toString());
+          const res = await activeClient.sendRequest('textDocument/references', {
+            textDocument: { uri: doc.uri.toString() },
+            position: { line: pos.line, character: pos.character },
+            context: { includeDeclaration: !!(context && context.includeDeclaration) },
+          });
+          if (!Array.isArray(res)) return [];
+          return res
+            .filter((loc) => loc && loc.uri && loc.range)
+            .map((loc) => new vscode.Location(vscode.Uri.parse(loc.uri), toVsRange(loc.range)));
+        } catch (err) {
+          output.appendLine(`[warn] references request failed: ${err.message}`);
+          return [];
+        }
+      },
+    }),
+    vscode.languages.registerRenameProvider('geisha', {
+      async prepareRename(doc, pos) {
+        if (!activeClient || !activeClient.initialized) return null;
+        activeClient.flushDidChange(doc.uri.toString());
+        const res = await activeClient.sendRequest('textDocument/prepareRename', {
+          textDocument: { uri: doc.uri.toString() },
+          position: { line: pos.line, character: pos.character },
+        });
+        if (!res) {
+          throw new Error('Cannot rename symbol at this position');
+        }
+        if (res.range && typeof res.placeholder === 'string') {
+          return { range: toVsRange(res.range), placeholder: res.placeholder };
+        }
+        if (res.start && res.end) {
+          return toVsRange(res);
+        }
+        return null;
+      },
+      async provideRenameEdits(doc, pos, newName) {
+        if (!activeClient || !activeClient.initialized) return null;
+        activeClient.flushDidChange(doc.uri.toString());
+        const res = await activeClient.sendRequest('textDocument/rename', {
+          textDocument: { uri: doc.uri.toString() },
+          position: { line: pos.line, character: pos.character },
+          newName,
+        });
+        if (!res) return null;
+        return toVsWorkspaceEdit(res);
+      },
+    }),
+    vscode.languages.registerInlayHintsProvider('geisha', {
+      async provideInlayHints(doc, range) {
+        if (!activeClient || !activeClient.initialized) return [];
+        try {
+          activeClient.flushDidChange(doc.uri.toString());
+          const res = await activeClient.sendRequest('textDocument/inlayHint', {
+            textDocument: { uri: doc.uri.toString() },
+            range: {
+              start: { line: range.start.line, character: range.start.character },
+              end: { line: range.end.line, character: range.end.character },
+            },
+          });
+          if (!Array.isArray(res)) return [];
+          return res.map((h) => {
+            const pos = new vscode.Position(
+              (h.position && h.position.line) || 0,
+              (h.position && h.position.character) || 0
+            );
+            const label = typeof h.label === 'string' ? h.label : '';
+            const kind =
+              h.kind === 1
+                ? vscode.InlayHintKind.Type
+                : h.kind === 2
+                  ? vscode.InlayHintKind.Parameter
+                  : undefined;
+            const hint = new vscode.InlayHint(pos, label, kind);
+            hint.paddingLeft = !!h.paddingLeft;
+            hint.paddingRight = !!h.paddingRight;
+            return hint;
+          });
+        } catch (err) {
+          output.appendLine(`[warn] inlayHint request failed: ${err.message}`);
+          return [];
+        }
+      },
+    }),
+    vscode.languages.registerCodeActionsProvider(
+      'geisha',
+      {
+        async provideCodeActions(doc, range, context) {
+          if (!activeClient || !activeClient.initialized) return [];
+          try {
+            activeClient.flushDidChange(doc.uri.toString());
+            const diags = context && Array.isArray(context.diagnostics)
+              ? context.diagnostics.map(fromVsDiagnostic)
+              : [];
+            const res = await activeClient.sendRequest('textDocument/codeAction', {
+              textDocument: { uri: doc.uri.toString() },
+              range: {
+                start: { line: range.start.line, character: range.start.character },
+                end: { line: range.end.line, character: range.end.character },
+              },
+              context: { diagnostics: diags },
+            });
+            if (!Array.isArray(res)) return [];
+            return res.map((act) => {
+              const kind = act.kind === 'quickfix' ? vscode.CodeActionKind.QuickFix : vscode.CodeActionKind.Empty;
+              const ca = new vscode.CodeAction(act.title || 'Quick Fix', kind);
+              if (act.edit) {
+                ca.edit = toVsWorkspaceEdit(act.edit);
+              }
+              return ca;
+            });
+          } catch (err) {
+            output.appendLine(`[warn] codeAction request failed: ${err.message}`);
+            return [];
+          }
+        },
+      },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    ),
     vscode.languages.registerDocumentSymbolProvider('geisha', {
       async provideDocumentSymbols(doc) {
         if (!activeClient || !activeClient.initialized) return [];
