@@ -9,6 +9,7 @@
     { "include": "#chars" },
     { "include": "#numbers" },
     { "include": "#definitions" },
+    { "include": "#modes" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#builtins" },
@@ -79,6 +80,13 @@
     "definitions": {
       "patterns": [
         {
+          "match": "\\b(def)\\s+\\(([^)\\s]+)\\)",
+          "captures": {
+            "1": { "name": "keyword.declaration.function.geisha" },
+            "2": { "name": "entity.name.function.operator.geisha" }
+          }
+        },
+        {
           "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
             "1": { "name": "keyword.declaration.function.geisha" },
@@ -101,6 +109,10 @@
         }
       ]
     },
+    "modes": {
+      "name": "storage.modifier.mode.geisha",
+      "match": "\\$(?:Scoped|Shared|Local)\\b"
+    },
     "keywords": {
       "patterns": [
         {
@@ -113,7 +125,7 @@
         },
         {
           "name": "storage.modifier.geisha",
-          "match": "\\b(?:pub|extern|noalloc|init)\\b"
+          "match": "\\b(?:pub|extern|noalloc|init|ptr)\\b"
         },
         {
           "name": "constant.language.boolean.geisha",
@@ -125,7 +137,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.geisha",
-          "match": "\\b(?:Void|Int|Int64|Float|Float32|Bool|Char|String|Ptr|ForeignPtr|ScopedPtr|Cell|Array|ImmArray|List|Option|Result|Vec|StrMap|StringBuf)\\b"
+          "match": "\\b(?:Void|Int|Int64|Float|Float32|Bool|Char|String|Ptr|ForeignPtr|ScopedPtr|Arena|Cell|MutArray|ImmArray|List|Option|Result|Vec|StrMap|IntMap|StringBuf|Send|Task|Actor|Chan|MVar|AtomicInt)\\b"
         },
         {
           "name": "entity.name.type.geisha",
@@ -135,7 +147,7 @@
     },
     "builtins": {
       "name": "support.function.builtin.geisha",
-      "match": "\\b(?:printLn|strLen|strByteAt|strSlice|strConcat|strFromBytes|ptrSliceFromStr|ptrSliceToString|ptrIsNull|ptrNull|ptrToString|ptrAllocBytes|ptrByteAt|cellNew|cellGet|cellSet|arrayNew|arrayGet|arraySet|arrayLen|intToI64|i64ToInt|intToFloat|floatToInt|charToInt|parTabulate|cFnPtr)\\b"
+      "match": "\\b(?:printLn|putNumber|putFloat|putF32|putChar|strLen|strByteAt|strSlice|strConcat|strFromBytes|ptrSliceFromStr|ptrSliceToString|ptrIsNull|ptrNull|ptrToString|ptrAllocBytes|ptrAllocBytes64|ptrByteAt|ptrSetByte|ptrOffset|ptrOffset64|ptrCopyBytes|ptrCopyBytes64|ptrCopyFromStr|foreignPtrAlloc|foreignPtrNew|withForeignPtr|withAlloca|withArena|arenaAlloc|scopedPtrOffset|scopedPtrOffset64|scopedPtrByteAt|scopedPtrSetByte|cellNew|cellGet|cellSet|arrayNew|arrayNewZeroed|arrayGet|arraySet|arrayLen|arrayClearSlot|arrayFreeze|immArrayLen|immArrayGet|intToI64|i64ToInt|intToFloat|floatToInt|intToF32|f32ToInt|floatToF32|f32ToFloat|charToInt|intToChar|parTabulate|cFnPtr|gcHandleNew|gcHandleGet|gcHandleFree|gcTrim)\\b"
     },
     "operators": {
       "patterns": [

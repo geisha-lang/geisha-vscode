@@ -3,6 +3,8 @@
 const cp = require('child_process');
 const vscode = require('vscode');
 
+const CHANGE_DEBOUNCE_MS = 80;
+
 /**
  * Lightweight zero-dependency JSON-RPC 2.0 stdio client for `geisha lsp`.
  */
@@ -25,6 +27,8 @@ class GeishaLspClient {
     this.proc = null;
     this.nextId = 1;
     this.pending = new Map();
+    /** @type {Map<string, { timer: NodeJS.Timeout, doc: vscode.TextDocument }>} */
+    this.changeTimers = new Map();
     this.recvBuf = Buffer.alloc(0);
     this.initialized = false;
     this.disposed = false;
@@ -86,6 +90,8 @@ class GeishaLspClient {
 
   async stop() {
     this.disposed = true;
+    this._clearAllChangeTimers();
+    this.diagnostics.clear();
     if (!this.proc) return;
     try {
       await Promise.race([
@@ -101,6 +107,13 @@ class GeishaLspClient {
       this.proc = null;
     }
     this._rejectAll(new Error('Client stopped'));
+  }
+
+  _clearAllChangeTimers() {
+    for (const [, entry] of this.changeTimers) {
+      clearTimeout(entry.timer);
+    }
+    this.changeTimers.clear();
   }
 
   _rejectAll(err) {
@@ -195,6 +208,7 @@ class GeishaLspClient {
   }
 
   didOpen(doc) {
+    this.cancelPendingChange(doc.uri.toString());
     this.sendNotification('textDocument/didOpen', {
       textDocument: {
         uri: doc.uri.toString(),
@@ -205,7 +219,7 @@ class GeishaLspClient {
     });
   }
 
-  didChange(doc) {
+  didChangeNow(doc) {
     this.sendNotification('textDocument/didChange', {
       textDocument: {
         uri: doc.uri.toString(),
@@ -215,7 +229,40 @@ class GeishaLspClient {
     });
   }
 
+  scheduleDidChange(doc) {
+    const key = doc.uri.toString();
+    const existing = this.changeTimers.get(key);
+    if (existing) {
+      clearTimeout(existing.timer);
+    }
+    const timer = setTimeout(() => {
+      this.changeTimers.delete(key);
+      if (this.initialized && !this.disposed) {
+        this.didChangeNow(doc);
+      }
+    }, CHANGE_DEBOUNCE_MS);
+    this.changeTimers.set(key, { timer, doc });
+  }
+
+  flushDidChange(uriStr) {
+    const entry = this.changeTimers.get(uriStr);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this.changeTimers.delete(uriStr);
+    if (this.initialized && !this.disposed) {
+      this.didChangeNow(entry.doc);
+    }
+  }
+
+  cancelPendingChange(uriStr) {
+    const entry = this.changeTimers.get(uriStr);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this.changeTimers.delete(uriStr);
+  }
+
   didSave(doc) {
+    this.flushDidChange(doc.uri.toString());
     this.sendNotification('textDocument/didSave', {
       textDocument: { uri: doc.uri.toString() },
       text: doc.getText(),
@@ -223,6 +270,7 @@ class GeishaLspClient {
   }
 
   didClose(doc) {
+    this.cancelPendingChange(doc.uri.toString());
     this.sendNotification('textDocument/didClose', {
       textDocument: { uri: doc.uri.toString() },
     });
@@ -332,7 +380,7 @@ async function activate(context) {
     }),
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.languageId === 'geisha' && activeClient && activeClient.initialized) {
-        activeClient.didChange(e.document);
+        activeClient.scheduleDidChange(e.document);
       }
     }),
     vscode.workspace.onDidSaveTextDocument((doc) => {
@@ -348,41 +396,59 @@ async function activate(context) {
     vscode.languages.registerHoverProvider('geisha', {
       async provideHover(doc, pos) {
         if (!activeClient || !activeClient.initialized) return null;
-        const res = await activeClient.sendRequest('textDocument/hover', {
-          textDocument: { uri: doc.uri.toString() },
-          position: { line: pos.line, character: pos.character },
-        });
-        if (!res || !res.contents) return null;
-        const value = typeof res.contents === 'string' ? res.contents : res.contents.value || '';
-        const md = new vscode.MarkdownString(value);
-        return new vscode.Hover(md, res.range ? toVsRange(res.range) : undefined);
+        try {
+          activeClient.flushDidChange(doc.uri.toString());
+          const res = await activeClient.sendRequest('textDocument/hover', {
+            textDocument: { uri: doc.uri.toString() },
+            position: { line: pos.line, character: pos.character },
+          });
+          if (!res || !res.contents) return null;
+          const value = typeof res.contents === 'string' ? res.contents : res.contents.value || '';
+          const md = new vscode.MarkdownString(value);
+          return new vscode.Hover(md, res.range ? toVsRange(res.range) : undefined);
+        } catch (err) {
+          output.appendLine(`[warn] hover request failed: ${err.message}`);
+          return null;
+        }
       },
     }),
     vscode.languages.registerDefinitionProvider('geisha', {
       async provideDefinition(doc, pos) {
         if (!activeClient || !activeClient.initialized) return null;
-        const res = await activeClient.sendRequest('textDocument/definition', {
-          textDocument: { uri: doc.uri.toString() },
-          position: { line: pos.line, character: pos.character },
-        });
-        if (!res) return null;
-        if (Array.isArray(res)) {
-          return res.map((loc) => new vscode.Location(vscode.Uri.parse(loc.uri), toVsRange(loc.range)));
+        try {
+          activeClient.flushDidChange(doc.uri.toString());
+          const res = await activeClient.sendRequest('textDocument/definition', {
+            textDocument: { uri: doc.uri.toString() },
+            position: { line: pos.line, character: pos.character },
+          });
+          if (!res) return null;
+          if (Array.isArray(res)) {
+            return res.map((loc) => new vscode.Location(vscode.Uri.parse(loc.uri), toVsRange(loc.range)));
+          }
+          if (res.uri && res.range) {
+            return new vscode.Location(vscode.Uri.parse(res.uri), toVsRange(res.range));
+          }
+          return null;
+        } catch (err) {
+          output.appendLine(`[warn] definition request failed: ${err.message}`);
+          return null;
         }
-        if (res.uri && res.range) {
-          return new vscode.Location(vscode.Uri.parse(res.uri), toVsRange(res.range));
-        }
-        return null;
       },
     }),
     vscode.languages.registerDocumentSymbolProvider('geisha', {
       async provideDocumentSymbols(doc) {
         if (!activeClient || !activeClient.initialized) return [];
-        const res = await activeClient.sendRequest('textDocument/documentSymbol', {
-          textDocument: { uri: doc.uri.toString() },
-        });
-        if (!Array.isArray(res)) return [];
-        return res.map(toVsDocumentSymbol);
+        try {
+          activeClient.flushDidChange(doc.uri.toString());
+          const res = await activeClient.sendRequest('textDocument/documentSymbol', {
+            textDocument: { uri: doc.uri.toString() },
+          });
+          if (!Array.isArray(res)) return [];
+          return res.map(toVsDocumentSymbol);
+        } catch (err) {
+          output.appendLine(`[warn] documentSymbol request failed: ${err.message}`);
+          return [];
+        }
       },
     }),
     vscode.languages.registerCompletionItemProvider(
@@ -390,22 +456,28 @@ async function activate(context) {
       {
         async provideCompletionItems(doc, pos) {
           if (!activeClient || !activeClient.initialized) return [];
-          const res = await activeClient.sendRequest('textDocument/completion', {
-            textDocument: { uri: doc.uri.toString() },
-            position: { line: pos.line, character: pos.character },
-          });
-          const rawItems = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);
-          return rawItems.map((it) => {
-            const ci = new vscode.CompletionItem(it.label, toVsCompletionKind(it.kind));
-            if (it.detail) ci.detail = it.detail;
-            if (it.documentation) {
-              const docText = typeof it.documentation === 'string'
-                ? it.documentation
-                : (it.documentation.value || '');
-              ci.documentation = new vscode.MarkdownString(docText);
-            }
-            return ci;
-          });
+          try {
+            activeClient.flushDidChange(doc.uri.toString());
+            const res = await activeClient.sendRequest('textDocument/completion', {
+              textDocument: { uri: doc.uri.toString() },
+              position: { line: pos.line, character: pos.character },
+            });
+            const rawItems = Array.isArray(res) ? res : (res && Array.isArray(res.items) ? res.items : []);
+            return rawItems.map((it) => {
+              const ci = new vscode.CompletionItem(it.label, toVsCompletionKind(it.kind));
+              if (it.detail) ci.detail = it.detail;
+              if (it.documentation) {
+                const docText = typeof it.documentation === 'string'
+                  ? it.documentation
+                  : (it.documentation.value || '');
+                ci.documentation = new vscode.MarkdownString(docText);
+              }
+              return ci;
+            });
+          } catch (err) {
+            output.appendLine(`[warn] completion request failed: ${err.message}`);
+            return [];
+          }
         },
       },
       '.'
