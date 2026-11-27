@@ -3,3 +3,4 @@
 .gitignore
 *.vsix
 .DS_Store
+test/**

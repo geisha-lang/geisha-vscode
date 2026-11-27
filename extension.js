@@ -262,6 +262,12 @@ class GeishaLspClient {
     }
   }
 
+  flushAllDidChanges() {
+    for (const uriStr of Array.from(this.changeTimers.keys())) {
+      this.flushDidChange(uriStr);
+    }
+  }
+
   cancelPendingChange(uriStr) {
     const entry = this.changeTimers.get(uriStr);
     if (!entry) return;
@@ -489,7 +495,7 @@ async function activate(context) {
       async provideReferences(doc, pos, context) {
         if (!activeClient || !activeClient.initialized) return [];
         try {
-          activeClient.flushDidChange(doc.uri.toString());
+          activeClient.flushAllDidChanges();
           const res = await activeClient.sendRequest('textDocument/references', {
             textDocument: { uri: doc.uri.toString() },
             position: { line: pos.line, character: pos.character },
@@ -508,7 +514,7 @@ async function activate(context) {
     vscode.languages.registerRenameProvider('geisha', {
       async prepareRename(doc, pos) {
         if (!activeClient || !activeClient.initialized) return null;
-        activeClient.flushDidChange(doc.uri.toString());
+        activeClient.flushAllDidChanges();
         const res = await activeClient.sendRequest('textDocument/prepareRename', {
           textDocument: { uri: doc.uri.toString() },
           position: { line: pos.line, character: pos.character },
@@ -526,13 +532,40 @@ async function activate(context) {
       },
       async provideRenameEdits(doc, pos, newName) {
         if (!activeClient || !activeClient.initialized) return null;
-        activeClient.flushDidChange(doc.uri.toString());
+        activeClient.flushAllDidChanges();
+        const versionsBefore = new Map();
+        for (const openDoc of vscode.workspace.textDocuments) {
+          if (openDoc.languageId === 'geisha') {
+            versionsBefore.set(openDoc.uri.toString(), openDoc.version);
+          }
+        }
+        const reqUri = doc.uri.toString();
+        const reqVer = doc.version;
         const res = await activeClient.sendRequest('textDocument/rename', {
-          textDocument: { uri: doc.uri.toString() },
+          textDocument: { uri: reqUri },
           position: { line: pos.line, character: pos.character },
           newName,
         });
         if (!res) return null;
+        if (doc.version !== reqVer) {
+          output.appendLine(`[warn] Discarding stale rename edits: ${reqUri} changed during request`);
+          return null;
+        }
+        if (res.changes && typeof res.changes === 'object') {
+          const openByUri = new Map();
+          for (const openDoc of vscode.workspace.textDocuments) {
+            if (openDoc.languageId === 'geisha') {
+              openByUri.set(openDoc.uri.toString(), openDoc);
+            }
+          }
+          for (const changedUri of Object.keys(res.changes)) {
+            const curDoc = openByUri.get(changedUri);
+            if (curDoc && versionsBefore.has(changedUri) && curDoc.version !== versionsBefore.get(changedUri)) {
+              output.appendLine(`[warn] Discarding stale rename edits: ${changedUri} changed during request`);
+              return null;
+            }
+          }
+        }
         return toVsWorkspaceEdit(res);
       },
     }),
